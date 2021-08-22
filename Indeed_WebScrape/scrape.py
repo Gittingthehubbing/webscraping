@@ -10,11 +10,21 @@ driverOpts = wd.FirefoxOptions()
 driverOpts.add_argument("--incognito")
 #driverOpts.add_argument("--headless")
 
+def hasClassAndName(tag):
+    return tag.has_attr("data-mobtk") and tag.name=="a"
+
+def returnAttrIfNotNone(obj,attr):
+    if obj is not None:
+                obj = getattr(obj,attr)
+    else:
+        obj = "Not Found"
+    return obj
 
 
 place="Poole"
 job = "Data Scientist".replace(" ","+")
-url =rf"https://uk.indeed.com/jobs?q={job}&l={place}"
+baseUrl = r"https://uk.indeed.com"
+url =rf"{baseUrl}/jobs?q={job}&l={place}"
 print(f"Doing URL {url}")
 
 doDynamic = False
@@ -24,21 +34,36 @@ if not doDynamic:
         pageHtml = page.read()
 
     pageSoupLxml = bs(pageHtml, "lxml")
-    jobCardsPart = pageSoupLxml.find("div",{"id":"mosaic-provider-jobcards"})
+    jobCardsPart = pageSoupLxml.find("div",{"id":"mosaic-zone-jobcards"})
 
     jobUrls = []
+    otherUrls = []
     for a in jobCardsPart.find_all("a"):
         url = a.get("href")
-        if "pagead" in url:
+        if "pagead" in url or "rc/clk" in url:
             jobUrls.append(url)
+        else:
+            otherUrls.append(url)
 
     jobCards = jobCardsPart.find_all(
-        "div",{"class":"slider_container"}
+        hasClassAndName
     )
-
+    
     jobsDf = pd.DataFrame()
 
-    for i,jobCard in enumerate(jobCards):
+    for i,jobListing in enumerate(jobCards):
+
+        url = jobListing.get("href")
+        if "pagead" in url or "rc/clk" in url:
+            jobUrl=f"{baseUrl}{url}"
+        else:
+            print("No URL found for ",i)
+
+        jobCard = jobListing.find(
+        "div",{"class":"slider_container"}
+        )
+
+        easyApply = True if "Easily apply to this job" in jobCard.find("table",{"class":"jobCardShelfContainer"}).text else False
 
         oneJobTitleFind = jobCard.find_all(
             "h2",{"class":re.compile("jobTitle jobTitle-color-purple")}
@@ -54,6 +79,8 @@ if not doDynamic:
         oneLocation = jobCard.find_all(
             "div",{"class":"companyLocation"}
             )[0].text
+
+        
         oneShortDescr = jobCard.find_all(
             "div",{"class":"job-snippet"}
             )[0].text.strip()
@@ -65,21 +92,37 @@ if not doDynamic:
                     if "new" not in tempText:
                         oneJobTitle = tempText            
             else:
-                oneJobTitle = oneJobTitleFind.span.text
-            #oneSnippet = oneSnippet[0].li.text
+                oneJobTitle = oneJobTitleFind.span.text            
+                    
+            with urlopen(jobUrl) as page:
+                subPageSoupLxml = bs(page.read(), "lxml")
+            
+            contractType = subPageSoupLxml.find("div",{"class":"jobsearch-JobMetadataHeader-item"})
+            contractType = returnAttrIfNotNone(contractType,"text")
+            
+            description = subPageSoupLxml.find("div",{"id":"jobDescriptionText"}).text
+            footer = subPageSoupLxml.find("div",{"class":"jobsearch-JobMetadataFooter"})
+            originalJobLink = returnAttrIfNotNone(footer,"href")
+            footer = returnAttrIfNotNone(footer,"text")
+            
             jobsDf = jobsDf.append(
                 pd.DataFrame(
                     {
                         "Job Title":oneJobTitle,
                         "Company":oneCompany,
                         "Location":oneLocation,
-                        "Short Description":oneShortDescr,
+                        "Easy_Apply": easyApply,
+                        "Contract_Type": contractType,
+                        "Short_Description":oneShortDescr,
+                        "Full_Description": description,
+                        "url":jobUrl,
                         },index=[i]))
         else:
             print("No job title for ",i)
 
     jobsDf.to_excel("jobsDf.xlsx")
     print(jobsDf)
+        
 
 else:
     drv = wd.Firefox(".",options=driverOpts)
