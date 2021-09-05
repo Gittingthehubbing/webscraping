@@ -5,10 +5,30 @@ import re
 from selenium import webdriver as wd
 from selenium.webdriver.common.keys import Keys
 import time
+import requests
+import geocoder
+from datetime import timedelta
+from datetime import datetime
 
-driverOpts = wd.FirefoxOptions()
-driverOpts.add_argument("--incognito")
-#driverOpts.add_argument("--headless")
+
+def getDistanceAndTime(origin,goal):
+    startLoc = geocoder.osm(f'{origin}, UK')
+    startCoord = startLoc.latlng
+    endLoc = geocoder.osm(f'{goal}, UK')
+    if not endLoc.ok:
+        return None,None
+    endCoord = endLoc.latlng
+    url =rf'http://router.project-osrm.org/route/v1/driving/{startCoord[1]},{startCoord[0]};{endCoord[1]},{endCoord[0]}'
+
+    r = requests.get(url)
+    res = r.json()
+    if res["code"] == 'Ok':
+        distance=res["routes"][0]["distance"]/1000 # in km
+        duration=str(timedelta(seconds=int(res["routes"][0]["duration"])))
+        return distance, duration
+    else:
+        print(res["code"],"Location not working")
+        return None,None
 
 def hasClassAndName(tag):
     return tag.has_attr("data-mobtk") and tag.name=="a"
@@ -19,6 +39,10 @@ def returnAttrIfNotNone(obj,attr):
     else:
         obj = "Not Found"
     return obj
+
+driverOpts = wd.FirefoxOptions()
+driverOpts.add_argument("--incognito")
+#driverOpts.add_argument("--headless")
 
 
 place="Poole"
@@ -104,7 +128,8 @@ if not doDynamic:
             footer = subPageSoupLxml.find("div",{"class":"jobsearch-JobMetadataFooter"})
             originalJobLink = returnAttrIfNotNone(footer,"href")
             footer = returnAttrIfNotNone(footer,"text")
-            
+
+            distance, duration = getDistanceAndTime(place,oneLocation)
             jobsDf = jobsDf.append(
                 pd.DataFrame(
                     {
@@ -113,13 +138,14 @@ if not doDynamic:
                         "Location":oneLocation,
                         "Easy_Apply": easyApply,
                         "Contract_Type": contractType,
+                        "Distance":distance,
+                        "Travel_Time":duration,
                         "Short_Description":oneShortDescr,
                         "Full_Description": description,
                         "url":jobUrl,
                         },index=[i]))
         else:
             print("No job title for ",i)
-
     jobsDf.to_excel("jobsDf.xlsx")
     print(jobsDf)
         
