@@ -10,10 +10,18 @@ import geocoder
 from datetime import timedelta
 from datetime import datetime
 
+def removeWord(source,word):
+    if word in source.lower():
+        source = source.lower().replace(word,"")
+    return source
 
 def getDistanceAndTime(origin,goal):
     startLoc = geocoder.osm(f'{origin}, UK')
     startCoord = startLoc.latlng
+    goal = removeWord(goal,"remote")
+    goal = removeWord(goal,"United Kingdom")
+    if goal=="":
+        return None,None
     endLoc = geocoder.osm(f'{goal}, UK')
     if not endLoc.ok:
         return None,None
@@ -46,9 +54,10 @@ driverOpts.add_argument("--incognito")
 
 
 place="Poole"
-job = "Data Scientist".replace(" ","+")
+job = "Data".replace(" ","+")
+radius = 50 # in miles
 baseUrl = r"https://uk.indeed.com"
-url =rf"{baseUrl}/jobs?q={job}&l={place}"
+url =rf"{baseUrl}/jobs?q={job}&l={place}&radius={radius}"
 print(f"Doing URL {url}")
 
 doDynamic = False
@@ -63,16 +72,24 @@ if not doDynamic:
     jobUrls = []
     otherUrls = []
     for a in jobCardsPart.find_all("a"):
-        url = a.get("href")
-        if "pagead" in url or "rc/clk" in url:
-            jobUrls.append(url)
+        url_jobCard = a.get("href")
+        if "pagead" in url_jobCard or "rc/clk" in url_jobCard:
+            jobUrls.append(url_jobCard)
         else:
-            otherUrls.append(url)
+            otherUrls.append(url_jobCard)
 
     jobCards = jobCardsPart.find_all(
         hasClassAndName
     )
+
+    navButtons = pageSoupLxml.find_all("ul",{"class":"pagination-list"})
+    if navButtons:
+        buttons = navButtons[0].find_all("li")
+        navUrls=[]
+        for idx in range(1,len(buttons)):
+            navUrls.append(f"{url}&start={10*idx}")
     
+
     jobsDf = pd.DataFrame()
 
     for i,jobListing in enumerate(jobCards):
