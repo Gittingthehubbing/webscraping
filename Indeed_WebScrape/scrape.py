@@ -19,8 +19,12 @@ def getDistanceAndTime(origin,goal):
     startLoc = geocoder.osm(f'{origin}, UK')
     startCoord = startLoc.latlng
     goal = removeWord(goal,"remote")
-    goal = removeWord(goal,"United Kingdom")
+    goal = removeWord(goal,"united kingdom")
+    goal = removeWord(goal,"england")
     if goal=="":
+        return None,None
+    checkLoc = geocoder.osm(f'{goal}')
+    if not checkLoc.ok:
         return None,None
     endLoc = geocoder.osm(f'{goal}, UK')
     if not endLoc.ok:
@@ -43,7 +47,7 @@ def hasClassAndName(tag):
 
 def returnAttrIfNotNone(obj,attr):
     if obj is not None:
-                obj = getattr(obj,attr)
+        obj = getattr(obj,attr)
     else:
         obj = "Not Found"
     return obj
@@ -55,12 +59,14 @@ driverOpts.add_argument("--incognito")
 
 place="Poole"
 job = "Data".replace(" ","+")
-radius = 50 # in miles
+radius = 25 # in miles
+
+doDynamic = False
+
 baseUrl = r"https://uk.indeed.com"
 url =rf"{baseUrl}/jobs?q={job}&l={place}&radius={radius}"
 print(f"Doing URL {url}")
 
-doDynamic = False
 
 if not doDynamic:
     with urlopen(url) as page:
@@ -89,6 +95,14 @@ if not doDynamic:
         for idx in range(1,len(buttons)):
             navUrls.append(f"{url}&start={10*idx}")
     
+    for navUrl in navUrls:
+        with urlopen(navUrl) as page:
+            navUrlHtml = page.read()
+        navUrlSoup = bs(navUrlHtml,"lxml")
+        navJobCardPart = navUrlSoup.find("div",{"id":"mosaic-zone-jobcards"})
+        navJobCards = jobCardsPart.find_all(hasClassAndName)
+        jobCards += navJobCards
+    
 
     jobsDf = pd.DataFrame()
 
@@ -98,6 +112,7 @@ if not doDynamic:
         if "pagead" in url or "rc/clk" in url:
             jobUrl=f"{baseUrl}{url}"
         else:
+            jobUrl = None
             print("No URL found for ",i)
 
         jobCard = jobListing.find(
@@ -120,11 +135,10 @@ if not doDynamic:
         oneLocation = jobCard.find_all(
             "div",{"class":"companyLocation"}
             )[0].text
-
         
-        oneShortDescr = jobCard.find_all(
+        oneShortDescr = jobCard.find(
             "div",{"class":"job-snippet"}
-            )[0].text.strip()
+            ).text.strip()
         if oneJobTitleFind:
             if isinstance(oneJobTitleFind,list):
                 temp = jobCard.find_all("h2")[0].find_all("span")
@@ -133,18 +147,23 @@ if not doDynamic:
                     if "new" not in tempText:
                         oneJobTitle = tempText            
             else:
-                oneJobTitle = oneJobTitleFind.span.text            
-                    
-            with urlopen(jobUrl) as page:
-                subPageSoupLxml = bs(page.read(), "lxml")
-            
-            contractType = subPageSoupLxml.find("div",{"class":"jobsearch-JobMetadataHeader-item"})
-            contractType = returnAttrIfNotNone(contractType,"text")
-            
-            description = subPageSoupLxml.find("div",{"id":"jobDescriptionText"}).text
-            footer = subPageSoupLxml.find("div",{"class":"jobsearch-JobMetadataFooter"})
-            originalJobLink = returnAttrIfNotNone(footer,"href")
-            footer = returnAttrIfNotNone(footer,"text")
+                oneJobTitle = oneJobTitleFind.span.text    
+
+            contractType = description =originalJobLink =postTime = None
+            if jobUrl:
+                with urlopen(jobUrl) as page:
+                    subPageSoupLxml = bs(page.read(), "lxml")
+                
+                contractType = subPageSoupLxml.find("div",{"class":"jobsearch-JobMetadataHeader-item"})
+                contractType = returnAttrIfNotNone(contractType,"text")
+                
+                description = subPageSoupLxml.find("div",{"id":"jobDescriptionText"}).text
+                footer = subPageSoupLxml.find("div",{"class":"jobsearch-JobMetadataFooter"}).find_all("div")
+                for foot in footer:
+                    if "days ago" in foot.text:                        
+                        postTime = int(foot.text[:foot.text.find(" days ago")].replace("+",""))
+                    if "original job" in foot.text:
+                        originalJobLink = foot.find("a").get("href")
 
             distance, duration = getDistanceAndTime(place,oneLocation)
             jobsDf = jobsDf.append(
@@ -155,15 +174,17 @@ if not doDynamic:
                         "Location":oneLocation,
                         "Easy_Apply": easyApply,
                         "Contract_Type": contractType,
-                        "Distance":distance,
+                        "Posted_Days_Ago":postTime,
+                        "Driving_Distance":distance,
                         "Travel_Time":duration,
                         "Short_Description":oneShortDescr,
                         "Full_Description": description,
                         "url":jobUrl,
+                        "Original_Job_Link":originalJobLink,
                         },index=[i]))
         else:
             print("No job title for ",i)
-    jobsDf.to_excel("jobsDf.xlsx")
+    jobsDf.to_excel(f"jobsDf_{place}_{job}.xlsx")
     print(jobsDf)
         
 
