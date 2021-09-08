@@ -15,18 +15,27 @@ def removeWord(source,word):
         source = source.lower().replace(word,"")
     return source
 
-def getDistanceAndTime(origin,goal):
-    startLoc = geocoder.osm(f'{origin}, UK')
+def getDistanceAndTime(origin, originPostcode, goal):
+    origin = origin.encode("ascii", "ignore").decode()
+    goal = goal.encode("ascii", "ignore").decode()
+    originPostcode = findPostcode(originPostcode)
+    if originPostcode:
+        startLoc = geocoder.osm(f'{originPostcode}')
+    else:
+        startLoc = geocoder.osm(f'{origin}, UK')
     startCoord = startLoc.latlng
     goal = removeWord(goal,"remote")
+    goal = removeWord(goal,"temporarily")
     goal = removeWord(goal,"united kingdom")
     goal = removeWord(goal,"england")
+    goal = removeWord(goal,"+1 location")
     if goal=="":
-        return None,None
-    checkLoc = geocoder.osm(f'{goal}')
-    if not checkLoc.ok:
-        return None,None
-    endLoc = geocoder.osm(f'{goal}, UK')
+        return None,None    
+    goalPostcode = findPostcode(goal)
+    if goalPostcode:
+        endLoc = geocoder.osm(f'{goalPostcode}')
+    else:
+        endLoc = geocoder.osm(f'{goal}, UK')
     if not endLoc.ok:
         return None,None
     endCoord = endLoc.latlng
@@ -52,13 +61,25 @@ def returnAttrIfNotNone(obj,attr):
         obj = "Not Found"
     return obj
 
+def findPostcode(string):
+    postcodes = re.findall(r"^[A-Z]{1,2}[0-9][A-Z0-9]? ?[0-9][A-Z]{2}$",string) #https://en.wikipedia.org/wiki/Postcodes_in_the_United_Kingdom    
+    if postcodes:
+        return postcodes[0]
+    else:
+        partialPostcode = re.findall(r"[A-Z]{1,2}[0-9]",string)
+        if partialPostcode:
+            return partialPostcode
+        else:
+            return None
+
 driverOpts = wd.FirefoxOptions()
 driverOpts.add_argument("--incognito")
 #driverOpts.add_argument("--headless")
 
 
 place="Poole"
-job = "Data".replace(" ","+")
+place_postcode = "BH15 3RJ"
+job = "Data Scientist".replace(" ","+")
 radius = 25 # in miles
 
 doDynamic = False
@@ -95,13 +116,13 @@ if not doDynamic:
         for idx in range(1,len(buttons)):
             navUrls.append(f"{url}&start={10*idx}")
     
-    for navUrl in navUrls:
-        with urlopen(navUrl) as page:
-            navUrlHtml = page.read()
-        navUrlSoup = bs(navUrlHtml,"lxml")
-        navJobCardPart = navUrlSoup.find("div",{"id":"mosaic-zone-jobcards"})
-        navJobCards = jobCardsPart.find_all(hasClassAndName)
-        jobCards += navJobCards
+        for navUrl in navUrls:
+            with urlopen(navUrl) as page:
+                navUrlHtml = page.read()
+            navUrlSoup = bs(navUrlHtml,"lxml")
+            navJobCardPart = navUrlSoup.find("div",{"id":"mosaic-zone-jobcards"})
+            navJobCards = navJobCardPart.find_all(hasClassAndName)
+            jobCards += navJobCards
     
 
     jobsDf = pd.DataFrame()
@@ -165,7 +186,7 @@ if not doDynamic:
                     if "original job" in foot.text:
                         originalJobLink = foot.find("a").get("href")
 
-            distance, duration = getDistanceAndTime(place,oneLocation)
+            distance, duration = getDistanceAndTime(place, place_postcode, oneLocation)
             jobsDf = jobsDf.append(
                 pd.DataFrame(
                     {
@@ -185,6 +206,9 @@ if not doDynamic:
         else:
             print("No job title for ",i)
     jobsDf.to_excel(f"jobsDf_{place}_{job}.xlsx")
+    markdown = jobsDf.drop(["Full_Description","url","Original_Job_Link"],axis=1).to_markdown()
+    with open("jobsDf.md","w") as f:
+        f.writelines(markdown)
     print(jobsDf)
         
 
