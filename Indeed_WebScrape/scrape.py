@@ -28,12 +28,14 @@ def getDistanceAndTime(origin, originPostcode, goal):
     goal = removeWord(goal,"temporarily")
     goal = removeWord(goal,"united kingdom")
     goal = removeWord(goal,"england")
+    goal = removeWord(goal,"south west")
+    goal = removeWord(goal,"south east")
     goal = removeWord(goal,"+1 location")
     if goal=="":
         return None,None    
     goalPostcode = findPostcode(goal)
     if goalPostcode:
-        endLoc = geocoder.osm(f'{goalPostcode}')
+        endLoc = geocoder.osm(f'{goalPostcode}, UK')
     else:
         endLoc = geocoder.osm(f'{goal}, UK')
     if not endLoc.ok:
@@ -62,11 +64,11 @@ def returnAttrIfNotNone(obj,attr):
     return obj
 
 def findPostcode(string):
-    postcodes = re.findall(r"^[A-Z]{1,2}[0-9][A-Z0-9]? ?[0-9][A-Z]{2}$",string) #https://en.wikipedia.org/wiki/Postcodes_in_the_United_Kingdom    
+    postcodes = re.findall(r"[A-Z]{1,2}[0-9][A-Z0-9]? ?[0-9][A-Z]{2}$",string) #https://en.wikipedia.org/wiki/Postcodes_in_the_United_Kingdom    
     if postcodes:
         return postcodes[0]
     else:
-        partialPostcode = re.findall(r"[A-Z]{1,2}[0-9]",string)
+        partialPostcode = re.findall(r"[A-Z]{1,2}[0-9][A-Z0-9]? ",string)
         if partialPostcode:
             return partialPostcode
         else:
@@ -80,12 +82,12 @@ driverOpts.add_argument("--incognito")
 place="Poole"
 place_postcode = "BH15 3RJ"
 job = "Data Scientist".replace(" ","+")
-radius = 25 # in miles
+radius = 75 # in miles
 
 doDynamic = False
 
-baseUrl = r"https://uk.indeed.com"
-url =rf"{baseUrl}/jobs?q={job}&l={place}&radius={radius}"
+baseUrl = "https://uk.indeed.com"
+url =f"{baseUrl}/jobs?q={job}&l={place}&radius={radius}"
 print(f"Doing URL {url}")
 
 
