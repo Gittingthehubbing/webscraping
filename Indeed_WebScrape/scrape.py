@@ -9,6 +9,7 @@ import requests
 import geocoder
 from datetime import timedelta
 from datetime import datetime
+import os
 
 def removeWord(source,word):
     if word in source.lower():
@@ -84,8 +85,10 @@ place_postcode = "BH15 3RJ"
 job = "Data Scientist".replace(" ","+")
 radius = 75 # in miles
 
+continueFileIfAvailable = 1
 doDynamic = False
 
+excelName = f"jobsDf_{place}_{job}.xlsx"
 baseUrl = "https://uk.indeed.com"
 url =f"{baseUrl}/jobs?q={job}&l={place}&radius={radius}"
 print(f"Doing URL {url}")
@@ -125,13 +128,17 @@ if not doDynamic:
             navJobCardPart = navUrlSoup.find("div",{"id":"mosaic-zone-jobcards"})
             navJobCards = navJobCardPart.find_all(hasClassAndName)
             jobCards += navJobCards
-    
+        
 
-    jobsDf = pd.DataFrame()
+    if continueFileIfAvailable and os.path.isfile(excelName):
+        jobsDf = pd.read_excel(excelName)
+    else:    
+        jobsDf = pd.DataFrame()
 
     for i,jobListing in enumerate(jobCards):
 
         url = jobListing.get("href")
+        id = jobListing.get("id")
         if "pagead" in url or "rc/clk" in url:
             jobUrl=f"{baseUrl}{url}"
         else:
@@ -192,6 +199,7 @@ if not doDynamic:
             jobsDf = jobsDf.append(
                 pd.DataFrame(
                     {
+                        "id":id,
                         "Job Title":oneJobTitle,
                         "Company":oneCompany,
                         "Location":oneLocation,
@@ -207,10 +215,17 @@ if not doDynamic:
                         },index=[i]))
         else:
             print("No job title for ",i)
-    jobsDf.to_excel(f"jobsDf_{place}_{job}.xlsx")
-    markdown = jobsDf.drop(["Full_Description","url","Original_Job_Link"],axis=1).to_markdown()
+    jobsDf.drop_duplicates(inplace=True)
+    if "Unnamed: 0" in jobsDf.columns:
+        jobsDf.drop("Unnamed: 0",axis=1,inplace=True)
+    jobsDf.to_excel(excelName)
+    markdown = jobsDf.drop(["Full_Description","url","Original_Job_Link"],axis=1).to_markdown(index=False)
     with open("jobsDf.md","w") as f:
-        f.writelines(markdown)
+        for l in markdown.split("\n"):
+            try:
+                f.write(f"{l}\n")
+            except Exception as e:
+                print(e,"\n","Problem with ",l)
     print(jobsDf)
         
 
