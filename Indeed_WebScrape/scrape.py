@@ -1,6 +1,7 @@
 from bs4 import BeautifulSoup as bs
 from urllib.request import urlopen
 import pandas as pd
+import numpy as np
 import re
 from selenium import webdriver as wd
 from selenium.webdriver.common.keys import Keys
@@ -85,7 +86,7 @@ place_postcode = "BH15 3RJ"
 job = "Data Scientist".replace(" ","+")
 radius = 75 # in miles
 
-continueFileIfAvailable = 1
+continueFileIfAvailable = False
 doDynamic = False
 
 excelName = f"jobsDf_{place}_{job}.xlsx"
@@ -186,6 +187,16 @@ if not doDynamic:
                 
                 contractType = subPageSoupLxml.find("div",{"class":"jobsearch-JobMetadataHeader-item"})
                 contractType = returnAttrIfNotNone(contractType,"text")
+                if "£" in contractType:
+                    salary_min = int(contractType[contractType.find("£")+1:contractType.find(" ")].replace(",",""))
+                    substr = contractType[contractType.find("£")+1:]
+                    if "£" in substr:
+                        salary_max_str = substr[substr.find("£")+1:]
+                        salary_max= int(salary_max_str[:salary_max_str.find(" ")].replace(",",""))
+                    else:
+                        salary_max = np.nan
+                else:
+                    salary_min = salary_max = np.nan
                 
                 description = subPageSoupLxml.find("div",{"id":"jobDescriptionText"}).text
                 footer = subPageSoupLxml.find("div",{"class":"jobsearch-JobMetadataFooter"}).find_all("div")
@@ -200,11 +211,13 @@ if not doDynamic:
                 pd.DataFrame(
                     {
                         "id":id,
-                        "Job Title":oneJobTitle,
+                        "Job_Title":oneJobTitle,
                         "Company":oneCompany,
                         "Location":oneLocation,
                         "Easy_Apply": easyApply,
                         "Contract_Type": contractType,
+                        "Minimum_Salary":salary_min,
+                        "Maximum_Salary":salary_max,
                         "Posted_Days_Ago":postTime,
                         "Driving_Distance":distance,
                         "Travel_Time":duration,
@@ -216,6 +229,7 @@ if not doDynamic:
         else:
             print("No job title for ",i)
     jobsDf.drop_duplicates(inplace=True)
+    jobsDf = jobsDf[~jobsDf.id.isnull()]
     if "Unnamed: 0" in jobsDf.columns:
         jobsDf.drop("Unnamed: 0",axis=1,inplace=True)
     jobsDf.to_excel(excelName)
