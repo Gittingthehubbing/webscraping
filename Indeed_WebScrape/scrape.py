@@ -76,6 +76,7 @@ def findPostcode(string):
         else:
             return None
 
+
 def makeTempDf(jobListing,baseUrl):
 
     url = jobListing.get("href")
@@ -161,8 +162,8 @@ def makeTempDf(jobListing,baseUrl):
                 "Driving_Distance":distance,
                 "Travel_Time":duration,
                 "Short_Description":oneShortDescr,
-                "Full_Description": description,
                 "url":jobUrl,
+                "Full_Description": description,
                 "Original_Job_Link":originalJobLink,
                 },index=[i])
     
@@ -232,100 +233,8 @@ if not doDynamic:
         jobsDf = pd.DataFrame()
 
     for i,jobListing in enumerate(jobCards):
-
-        # url = jobListing.get("href")
-        # id = jobListing.get("id")
-        # if "pagead" in url or "rc/clk" in url:
-        #     jobUrl=f"{baseUrl}{url}"
-        # else:
-        #     jobUrl = None
-        #     print("No URL found for ",i)
-
-        # jobCard = jobListing.find(
-        # "div",{"class":"slider_container"}
-        # )
-
-        # easyApply = True if "Easily apply to this job" in jobCard.find("table",{"class":"jobCardShelfContainer"}).text else False
-
-        # oneJobTitleFind = jobCard.find_all(
-        #     "h2",{"class":re.compile("jobTitle jobTitle-color-purple")}
-        #     )
-
-        # td = jobCard.find_all(
-        #     "td",{"class":"resultContent"}
-        #     )[0]
-        # tdText=td.getText()
-        # oneCompany = jobCard.find_all(
-        #     "span",{"class":"companyName"}
-        #     )[0].text
-        # oneLocation = jobCard.find_all(
-        #     "div",{"class":"companyLocation"}
-        #     )[0].text
-        
-        # oneShortDescr = jobCard.find(
-        #     "div",{"class":"job-snippet"}
-        #     ).text.strip()
-        # if oneJobTitleFind:
-        #     if isinstance(oneJobTitleFind,list):
-        #         temp = jobCard.find_all("h2")[0].find_all("span")
-        #         for t in temp:
-        #             tempText = t.text                
-        #             if "new" not in tempText:
-        #                 oneJobTitle = tempText            
-        #     else:
-        #         oneJobTitle = oneJobTitleFind.span.text    
-
-        #     contractType = description =originalJobLink =postTime = None
-        #     if jobUrl:
-        #         with urlopen(jobUrl) as page:
-        #             subPageSoupLxml = bs(page.read(), "lxml")
-                
-        #         contractType = subPageSoupLxml.find("div",{"class":"jobsearch-JobMetadataHeader-item"})
-        #         contractType = returnAttrIfNotNone(contractType,"text")
-        #         if "£" in contractType:
-        #             salary_min = int(contractType[contractType.find("£")+1:contractType.find(" ")].replace(",",""))
-        #             substr = contractType[contractType.find("£")+1:]
-        #             if "£" in substr:
-        #                 salary_max_str = substr[substr.find("£")+1:]
-        #                 salary_max= int(salary_max_str[:salary_max_str.find(" ")].replace(",",""))
-        #             else:
-        #                 salary_max = np.nan
-        #         else:
-        #             salary_min = salary_max = np.nan
-                
-        #         description = subPageSoupLxml.find("div",{"id":"jobDescriptionText"}).text
-        #         footer = subPageSoupLxml.find("div",{"class":"jobsearch-JobMetadataFooter"}).find_all("div")
-        #         for foot in footer:
-        #             if "days ago" in foot.text:                        
-        #                 postTime = int(foot.text[:foot.text.find(" days ago")].replace("+",""))
-        #             if "original job" in foot.text:
-        #                 originalJobLink = foot.find("a").get("href")
-
-        #     distance, duration = getDistanceAndTime(place, place_postcode, oneLocation)
-        #     jobsDf = jobsDf.append(
-        #         pd.DataFrame(
-        #             {
-        #                 "id":id,
-        #                 "Job_Title":oneJobTitle,
-        #                 "Company":oneCompany,
-        #                 "Location":oneLocation,
-        #                 "Easy_Apply": easyApply,
-        #                 "Contract_Type": contractType,
-        #                 "Minimum_Salary":salary_min,
-        #                 "Maximum_Salary":salary_max,
-        #                 "Posted_Days_Ago":postTime,
-        #                 "Driving_Distance":distance,
-        #                 "Travel_Time":duration,
-        #                 "Short_Description":oneShortDescr,
-        #                 "Full_Description": description,
-        #                 "url":jobUrl,
-        #                 "Original_Job_Link":originalJobLink,
-        #                 },index=[i]))
-
             jobsDf = jobsDf.append(makeTempDf(jobListing,baseUrl))
-        # else:
-        #     print("No job title for ",i)
-    jobsDf.drop_duplicates(inplace=True)
+    jobsDf.drop_duplicates(["url"],inplace=True)
     jobsDf = jobsDf[~jobsDf.id.isnull()]
     if "Unnamed: 0" in jobsDf.columns:
         jobsDf.drop("Unnamed: 0",axis=1,inplace=True)
