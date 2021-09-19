@@ -48,7 +48,7 @@ def getDistanceAndTime(origin, originPostcode, goal):
     r = requests.get(url)
     res = r.json()
     if res["code"] == 'Ok':
-        distance=res["routes"][0]["distance"]/1000 # in km
+        distance=round(res["routes"][0]["distance"]/1000) # in km
         duration=str(timedelta(seconds=int(res["routes"][0]["duration"])))
         return distance, duration
     else:
@@ -80,8 +80,7 @@ def findPostcode(string):
 def makeTempDf(jobListing,baseUrl):
 
     url = jobListing.get("href")
-    job_id = jobListing.get("id")
-    if "pagead" in url or "rc/clk" in url:
+    if any(jobStr in url for jobStr in ["pagead","rc/clk","/company/"]):
         jobUrl=f"{baseUrl}{url}"
     else:
         jobUrl = None
@@ -145,12 +144,13 @@ def makeTempDf(jobListing,baseUrl):
                     postTime = int(foot.text[:foot.text.find(" days ago")].replace("+",""))
                 if "original job" in foot.text:
                     originalJobLink = foot.find("a").get("href")
+        else:
+            return pd.DataFrame()
 
         distance, duration = getDistanceAndTime(place, place_postcode, oneLocation)
         
         return pd.DataFrame(
             {
-                "id":job_id,
                 "Job_Title":oneJobTitle,
                 "Company":oneCompany,
                 "Location":oneLocation,
@@ -178,9 +178,9 @@ driverOpts.add_argument("--incognito")
 
 
 place="Poole"
-place_postcode = "BH15 3RJ"
+place_postcode = "BH4 8DS"
 job = "Data Scientist".replace(" ","+")
-radius = 50 # in miles
+radius = 100 # in miles
 
 continueFileIfAvailable = False
 doDynamic = False
@@ -235,9 +235,17 @@ if not doDynamic:
     for i,jobListing in enumerate(jobCards):
             jobsDf = jobsDf.append(makeTempDf(jobListing,baseUrl))
     jobsDf.drop_duplicates(["url"],inplace=True)
-    jobsDf = jobsDf[~jobsDf.id.isnull()]
     if "Unnamed: 0" in jobsDf.columns:
         jobsDf.drop("Unnamed: 0",axis=1,inplace=True)
+    wr = pd.ExcelWriter(f"Formatted_{excelName}",engine="xlsxwriter")
+    jobsDf.to_excel(wr,sheet_name="Jobs")
+    wb = wr.book
+    ws = wr.sheets["Jobs"]
+    format1 = wb.add_format({"num_format":'£#,##0'})
+    format2 = wb.add_format({"num_format":'#,##0"km"'})
+    ws.set_column("G:H",10,format1)
+    ws.set_column("J:J",10,format2)
+    wr.save()
     jobsDf.to_excel(excelName)
     markdown = jobsDf.drop(["Full_Description","url","Original_Job_Link"],axis=1).to_markdown(index=False)
     with open("jobsDf.md","w") as f:
