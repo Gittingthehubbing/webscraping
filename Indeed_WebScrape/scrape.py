@@ -138,6 +138,12 @@ def makeTempDf(jobListing,baseUrl):
                 salary_min = salary_max = np.nan
             
             description = subPageSoupLxml.find("div",{"id":"jobDescriptionText"}).text
+            keywordCountsDict = {word:description.lower().count(word) for word in keywords}
+            if keywordCountsDict:
+                keywordCount = sum(keywordCountsDict.values())
+                mostCommenKeyword = max(keywordCountsDict,key=keywordCountsDict.get) # returns key of highest value in dict
+            else:
+                keywordCount,mostCommenKeyword = None,None
             footer = subPageSoupLxml.find("div",{"class":"jobsearch-JobMetadataFooter"}).find_all("div")
             for foot in footer:
                 if "days ago" in foot.text:                        
@@ -161,6 +167,8 @@ def makeTempDf(jobListing,baseUrl):
                 "Posted_Days_Ago":postTime,
                 "Driving_Distance":distance,
                 "Travel_Time":duration,
+                "Matching_Keywords":keywordCount,
+                "Most_Common_Keyword": mostCommenKeyword,
                 "Short_Description":oneShortDescr,
                 "url":jobUrl,
                 "Full_Description": description,
@@ -180,7 +188,8 @@ driverOpts.add_argument("--incognito")
 place="Poole"
 place_postcode = "BH4 8DS"
 job = "Data Scientist".replace(" ","+")
-radius = 100 # in miles
+radius = 50 # in miles
+keywords = ["python", "pandas","pytorch","scikit","keras","sql","tensorflow"]
 
 continueFileIfAvailable = False
 doDynamic = False
@@ -241,12 +250,12 @@ if not doDynamic:
     jobsDf.to_excel(wr,sheet_name="Jobs")
     wb = wr.book
     ws = wr.sheets["Jobs"]
+    ws.set_column(1,len(jobsDf.columns),10)
     format1 = wb.add_format({"num_format":'£#,##0'})
     format2 = wb.add_format({"num_format":'#,##0"km"'})
     ws.set_column("G:H",10,format1)
     ws.set_column("J:J",10,format2)
     wr.save()
-    jobsDf.to_excel(excelName)
     markdown = jobsDf.drop(["Full_Description","url","Original_Job_Link"],axis=1).to_markdown(index=False)
     with open("jobsDf.md","w") as f:
         for l in markdown.split("\n"):
