@@ -11,6 +11,7 @@ import geocoder
 from datetime import timedelta
 from datetime import datetime
 import os
+from sqlalchemy import create_engine
 
 def removeWord(source,word):
     if word in source.lower():
@@ -188,10 +189,13 @@ driverOpts.add_argument("--incognito")
 place="Poole"
 place_postcode = "BH4 8DS"
 job = "Data Scientist".replace(" ","+")
-radius = 50 # in miles
+radius = 25 # in miles
 keywords = ["python", "pandas","pytorch","scikit","keras","sql","tensorflow"]
 
-continueFileIfAvailable = False
+
+dbTableName = 'indeed_jobs'
+saveToSQL = True
+continueFileIfAvailable = True
 doDynamic = False
 
 excelName = f"jobsDf_{place}_{job}.xlsx"
@@ -246,15 +250,25 @@ if not doDynamic:
     jobsDf.drop_duplicates(["url"],inplace=True)
     if "Unnamed: 0" in jobsDf.columns:
         jobsDf.drop("Unnamed: 0",axis=1,inplace=True)
+
+    totalRows,totalCols = jobsDf.shape
     wr = pd.ExcelWriter(f"Formatted_{excelName}",engine="xlsxwriter")
     jobsDf.to_excel(wr,sheet_name="Jobs")
     wb = wr.book
     ws = wr.sheets["Jobs"]
-    ws.set_column(1,len(jobsDf.columns),10)
+    ws.set_column(1,len(jobsDf.columns)+1,20)
     format1 = wb.add_format({"num_format":'£#,##0'})
     format2 = wb.add_format({"num_format":'#,##0"km"'})
     ws.set_column("G:H",10,format1)
     ws.set_column("J:J",10,format2)
+
+    
+    ws2 = wb.add_worksheet("Charts")
+    chart = wb.add_chart({"type":"column"})
+    chart.add_series({
+        "values": f"=Jobs!$G$1:$G${totalRows+1}",
+        'categories': f"=Jobs!$B$1:$B${totalRows+1}"})
+    ws2.insert_chart("A1",chart)
     wr.save()
     markdown = jobsDf.drop(["Full_Description","url","Original_Job_Link"],axis=1).to_markdown(index=False)
     with open("jobsDf.md","w") as f:
@@ -264,6 +278,23 @@ if not doDynamic:
             except Exception as e:
                 print(e,"\n","Problem with ",l)
     print(jobsDf)
+
+        
+    if saveToSQL:
+        with open("sqlpass.txt","r") as f:
+            lines = f.readlines()
+            loginName = lines[0].strip()
+            loginPass = lines[1]
+        engine = create_engine(f'postgresql://{loginName}:{loginPass}@localhost:5432/webscdb')
+        if not engine.has_table(dbTableName):
+            jobsDf.to_sql(dbTableName,engine)
+        else:
+            sqlDf = pd.read_sql(dbTableName,engine)
+            sqlDf = sqlDf.append(jobsDf)
+            sqlDf.drop(["level_0","index"],axis=1,inplace=True)
+            sqlDf.reset_index(inplace=True)
+            sqlDf.drop_duplicates(["url"],inplace=True)
+            sqlDf.to_sql(dbTableName,engine,if_exists="replace")
         
 
 else:
