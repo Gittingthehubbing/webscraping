@@ -12,6 +12,7 @@ from datetime import timedelta
 from datetime import datetime
 import os
 from sqlalchemy import create_engine
+from string import ascii_uppercase 
 
 def removeWord(source,word):
     if word in source.lower():
@@ -161,7 +162,6 @@ def makeTempDf(jobListing,baseUrl):
                 "Job_Title":oneJobTitle,
                 "Company":oneCompany,
                 "Location":oneLocation,
-                "Easy_Apply": easyApply,
                 "Contract_Type": contractType,
                 "Minimum_Salary":salary_min,
                 "Maximum_Salary":salary_max,
@@ -171,6 +171,7 @@ def makeTempDf(jobListing,baseUrl):
                 "Matching_Keywords":keywordCount,
                 "Most_Common_Keyword": mostCommenKeyword,
                 "Short_Description":oneShortDescr,
+                "Easy_Apply": easyApply,
                 "url":jobUrl,
                 "Full_Description": description,
                 "Original_Job_Link":originalJobLink,
@@ -195,7 +196,7 @@ keywords = ["python", "pandas","pytorch","scikit","keras","sql","tensorflow"]
 
 dbTableName = 'indeed_jobs'
 saveToSQL = True
-continueFileIfAvailable = True
+continueFileIfAvailable = False
 doDynamic = False
 
 excelName = f"jobsDf_{place}_{job}.xlsx"
@@ -203,6 +204,13 @@ baseUrl = "https://uk.indeed.com"
 url =f"{baseUrl}/jobs?q={job}&l={place}&radius={radius}"
 print(f"Doing URL {url}")
 
+upperCaseLetters = ascii_uppercase
+
+
+def dfColToLetter(df,col):
+    cols = list(df.columns)
+    num = cols.index(col)
+    return upperCaseLetters[num]
 
 if not doDynamic:
     with urlopen(url) as page:
@@ -253,7 +261,7 @@ if not doDynamic:
 
     totalRows,totalCols = jobsDf.shape
     wr = pd.ExcelWriter(f"Formatted_{excelName}",engine="xlsxwriter")
-    jobsDf.to_excel(wr,sheet_name="Jobs")
+    jobsDf.to_excel(wr,sheet_name="Jobs",index=False)
     wb = wr.book
     ws = wr.sheets["Jobs"]
     ws.set_column(1,len(jobsDf.columns)+1,20)
@@ -261,13 +269,17 @@ if not doDynamic:
     format2 = wb.add_format({"num_format":'#,##0"km"'})
     ws.set_column("G:H",10,format1)
     ws.set_column("J:J",10,format2)
-
     
     ws2 = wb.add_worksheet("Charts")
-    chart = wb.add_chart({"type":"column"})
-    chart.add_series({
-        "values": f"=Jobs!$G$1:$G${totalRows+1}",
-        'categories': f"=Jobs!$B$1:$B${totalRows+1}"})
+    chart = wb.add_chart({"type":"bar"})
+    chart.set_size({"width":720,"height":540})#in pixels
+    plotCols = ['Minimum_Salary','Maximum_Salary']
+    for plotCol in plotCols:
+        chart.add_series({
+            "values": f"=Jobs!${dfColToLetter(jobsDf,plotCol)}$2:${dfColToLetter(jobsDf,plotCol)}${totalRows+1}",
+            'categories': f"=Jobs!${dfColToLetter(jobsDf,'Job_Title')}$2:${dfColToLetter(jobsDf,'Job_Title')}${totalRows+1}",
+            "name":f"=Jobs!${dfColToLetter(jobsDf,plotCol)}$1"})
+    chart.set_title({"name":"Jobs!$G$1"})
     ws2.insert_chart("A1",chart)
     wr.save()
     markdown = jobsDf.drop(["Full_Description","url","Original_Job_Link"],axis=1).to_markdown(index=False)
@@ -289,11 +301,15 @@ if not doDynamic:
         if not engine.has_table(dbTableName):
             jobsDf.to_sql(dbTableName,engine)
         else:
-            sqlDf = pd.read_sql(dbTableName,engine)
-            sqlDf = sqlDf.append(jobsDf)
-            sqlDf.drop(["level_0","index"],axis=1,inplace=True)
-            sqlDf.reset_index(inplace=True)
-            sqlDf.drop_duplicates(["url"],inplace=True)
+            if continueFileIfAvailable:
+                sqlDf = pd.read_sql(dbTableName,engine)
+                sqlDf = sqlDf.append(jobsDf)
+                if "level_0" in sqlDf.columns:
+                    sqlDf.drop(["level_0","index"],axis=1,inplace=True)
+                sqlDf.reset_index(inplace=True,drop=True)
+                sqlDf.drop_duplicates(["url"],inplace=True)
+            else:
+                sqlDf = jobsDf
             sqlDf.to_sql(dbTableName,engine,if_exists="replace")
         
 
