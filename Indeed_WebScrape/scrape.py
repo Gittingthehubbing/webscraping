@@ -13,6 +13,7 @@ from datetime import datetime
 import os
 from sqlalchemy import create_engine
 from string import ascii_uppercase 
+from transformers import pipeline
 
 def removeWord(source,word):
     if word in source.lower():
@@ -139,7 +140,7 @@ def makeTempDf(jobListing,baseUrl):
             else:
                 salary_min = salary_max = np.nan
             
-            description = subPageSoupLxml.find("div",{"id":"jobDescriptionText"}).text
+            description = subPageSoupLxml.find("div",{"id":"jobDescriptionText"}).text.strip().replace("\n","")
             keywordCountsDict = {word:description.lower().count(word) for word in keywords}
             if keywordCountsDict:
                 keywordCount = sum(keywordCountsDict.values())
@@ -171,6 +172,7 @@ def makeTempDf(jobListing,baseUrl):
                 "Matching_Keywords":keywordCount,
                 "Most_Common_Keyword": mostCommenKeyword,
                 "Short_Description":oneShortDescr,
+                "Summary":makeSummary(description,int(len(description)/10),60),
                 "Easy_Apply": easyApply,
                 "url":jobUrl,
                 "Full_Description": description,
@@ -180,6 +182,15 @@ def makeTempDf(jobListing,baseUrl):
     else:
         print("No job title for ",i)
         return pd.DataFrame()
+
+def makeSummary(text,max_length=100,min_length=20):
+    summarizer = pipeline("summarization")
+    try:
+        summary = summarizer(text,max_length=max_length, min_length=min_length, do_sample=False)
+    except Exception as e:
+        print(e)
+        summary = None
+    return summary
 
 
 driverOpts = wd.FirefoxOptions()
