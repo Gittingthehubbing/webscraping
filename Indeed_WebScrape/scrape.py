@@ -169,7 +169,7 @@ def makeTempDf(jobListing,baseUrl):
                 "Posted_Days_Ago":postTime,
                 "Driving_Distance":distance,
                 "Travel_Time":duration,
-                "Matching_Keywords":keywordCount,
+                "Matching_Keywords_Count":keywordCount,
                 "Most_Common_Keyword": mostCommenKeyword,
                 "Short_Description":oneShortDescr,
                 "Summary":makeSummary(description,int(len(description)/10),60),
@@ -184,13 +184,14 @@ def makeTempDf(jobListing,baseUrl):
         return pd.DataFrame()
 
 def makeSummary(text,max_length=100,min_length=20):
-    summarizer = pipeline("summarization")
+    summarizer = pipeline("summarization",model="sshleifer/distilbart-cnn-12-6")
     try:
-        summary = summarizer(text,max_length=max_length, min_length=min_length, do_sample=False)
+        s = summarizer(text,max_length=max_length, min_length=min_length, do_sample=False)[1]
+        return s
     except Exception as e:
         print(e)
-        summary = None
-    return summary
+        return None
+     
 
 
 driverOpts = wd.FirefoxOptions()
@@ -275,11 +276,13 @@ if not doDynamic:
     jobsDf.to_excel(wr,sheet_name="Jobs",index=False)
     wb = wr.book
     ws = wr.sheets["Jobs"]
-    ws.set_column(1,len(jobsDf.columns)+1,20)
+    ws.set_column(0,len(jobsDf.columns)+1,20)
     format1 = wb.add_format({"num_format":'£#,##0'})
     format2 = wb.add_format({"num_format":'#,##0"km"'})
-    ws.set_column("G:H",10,format1)
-    ws.set_column("J:J",10,format2)
+    wrapFormat = wb.add_format({"text_wrap":True})
+    ws.set_column("D:F",10,format1)
+    ws.set_column("H:H",10,format2)
+    ws.set_column("L:M",20,wrapFormat)
     
     ws2 = wb.add_worksheet("Charts")
     chart = wb.add_chart({"type":"bar"})
@@ -290,7 +293,7 @@ if not doDynamic:
             "values": f"=Jobs!${dfColToLetter(jobsDf,plotCol)}$2:${dfColToLetter(jobsDf,plotCol)}${totalRows+1}",
             'categories': f"=Jobs!${dfColToLetter(jobsDf,'Job_Title')}$2:${dfColToLetter(jobsDf,'Job_Title')}${totalRows+1}",
             "name":f"=Jobs!${dfColToLetter(jobsDf,plotCol)}$1"})
-    chart.set_title({"name":"Jobs!$G$1"})
+    chart.set_title({"name":"Salary"})
     ws2.insert_chart("A1",chart)
     wr.save()
     markdown = jobsDf.drop(["Full_Description","url","Original_Job_Link"],axis=1).to_markdown(index=False)
