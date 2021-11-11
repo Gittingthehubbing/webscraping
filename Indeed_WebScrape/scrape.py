@@ -14,6 +14,7 @@ import os
 from sqlalchemy import create_engine
 from string import ascii_uppercase 
 from transformers import pipeline
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 def removeWord(source,word):
     if word in source.lower():
@@ -172,7 +173,7 @@ def makeTempDf(jobListing,baseUrl):
                 "Matching_Keywords_Count":keywordCount,
                 "Most_Common_Keyword": mostCommenKeyword,
                 "Short_Description":oneShortDescr,
-                "Summary":makeSummary(description,int(len(description)/10),60),
+                "Summary":makeSummaryCustom(description,int(len(description)/10),60),
                 "Easy_Apply": easyApply,
                 "url":jobUrl,
                 "Full_Description": description,
@@ -186,8 +187,24 @@ def makeTempDf(jobListing,baseUrl):
 def makeSummary(text,max_length=100,min_length=20):
     summarizer = pipeline("summarization",model="sshleifer/distilbart-cnn-12-6")
     try:
-        s = summarizer(text,max_length=max_length, min_length=min_length, do_sample=False)[1]
-        return s
+        s = summarizer(text,max_length=max_length, min_length=min_length, do_sample=False)
+        return s[0]["summary_text"]
+    except Exception as e:
+        print(e)
+        return None
+
+
+def makeSummaryCustom(text,max_length=100,min_length=20):
+    model = AutoModelForSeq2SeqLM.from_pretrained("t5-base")
+    tokenizer = AutoTokenizer.from_pretrained("t5-base")
+    try:
+        inputs = tokenizer("summarize: " + text, return_tensors="pt", max_length=512, truncation=True)
+        outputs = model.generate(
+            inputs["input_ids"], max_length=max_length, min_length=min_length, length_penalty=2.0,
+            num_beams=4, early_stopping=True
+        )
+        s = tokenizer.decode(outputs[0]).replace("<pad> ","").replace("</s>","")
+        return s        
     except Exception as e:
         print(e)
         return None
@@ -283,6 +300,9 @@ if not doDynamic:
     ws.set_column("D:F",10,format1)
     ws.set_column("H:H",10,format2)
     ws.set_column("L:M",20,wrapFormat)
+    ws.set_column("A:B",20,wrapFormat)
+    for rowIdx in range(2,jobsDf.shape[0]):
+        ws.set_row(rowIdx,20)
     
     ws2 = wb.add_worksheet("Charts")
     chart = wb.add_chart({"type":"bar"})
