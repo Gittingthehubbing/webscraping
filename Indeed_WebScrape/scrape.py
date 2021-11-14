@@ -149,10 +149,7 @@ def makeTempDf(jobListing,baseUrl):
             keywordCountsDict = {word:description.lower().count(word) for word in keywords}
             if keywordCountsDict:
                 keywordCount = sum(keywordCountsDict.values())
-                if keywordCount>0:
-                    mostCommenKeyword = max(keywordCountsDict,key=keywordCountsDict.get) # returns key of highest value in dict
-                else:
-                    mostCommenKeyword = None
+                mostCommenKeyword = max(keywordCountsDict,key=keywordCountsDict.get) # returns key of highest value in dict
             else:
                 keywordCount,mostCommenKeyword = None,None
             footer = subPageSoupLxml.find("div",{"class":"jobsearch-JobMetadataFooter"}).find_all("div")
@@ -223,19 +220,19 @@ driverOpts.add_argument("--incognito")
 #driverOpts.add_argument("--headless")
 
 
-place="Poole"
-place_postcode = "BH14 0BN "
-country = ["UK","DE"][0]
-job = "Machine Learning".replace(" ","+")
-radius = 100 # in miles
-keywords = ["python", "pandas","pytorch","scikit","keras","sql","tensorflow","photonics","FDTD"]
+place="Duisburg"
+place_postcode = "47058"
+country = ["UK","DE"][1]
+job = "Ingenieur".replace(" ","+")
+radius = 25 # in miles
+keywords = ["python", "pandas","pytorch","scikit","keras","sql","tensorflow"]
 
 
 dbTableName = 'indeed_jobs'
 saveToSQL = False
 continueFileIfAvailable = False
 doDynamic = False
-doSummary = True # English only atm
+doSummary = False # English only atm
 
 if country != "UK":
     doSummary = False
@@ -312,12 +309,7 @@ if not doDynamic:
             try:
                 jobsDf = jobsDf.append(makeTempDf(jobListing,baseUrl))
             except Exception as e:
-                print(e,"makeTempDf Failed, trying again in 60s")
-                time.sleep(60)
-                try:
-                    jobsDf = jobsDf.append(makeTempDf(jobListing,baseUrl))
-                except Exception as e:
-                    print(e,"makeTempDf Failed again")
+                print(e," Failed")
 
         jobsDf.drop_duplicates(["url"],inplace=True)
         if "Unnamed: 0" in jobsDf.columns:
@@ -336,7 +328,6 @@ if not doDynamic:
         ws.set_column("H:H",10,format2)
         ws.set_column("L:M",20,wrapFormat)
         ws.set_column("A:B",20,wrapFormat)
-        ws.set_column("P:P",50,wrapFormat)
         for rowIdx in range(2,jobsDf.shape[0]):
             ws.set_row(rowIdx,20)
         
