@@ -19,10 +19,10 @@ def removeWord(source,word):
         source = source.lower().replace(word,"")
     return source
 
-def getDistanceAndTime(origin, originPostcode, goal):
+def getDistanceAndTime(origin, originPostcode, goal,country):
     origin = origin.encode("ascii", "ignore").decode()
     goal = goal.encode("ascii", "ignore").decode()
-    originPostcode = findPostcode(originPostcode)
+    originPostcode = findPostcode(originPostcode,country)
     if originPostcode:
         startLoc = geocoder.osm(f'{originPostcode}')
     else:
@@ -37,7 +37,7 @@ def getDistanceAndTime(origin, originPostcode, goal):
     goal = removeWord(goal,"+1 location")
     if goal=="":
         return None,None    
-    goalPostcode = findPostcode(goal)
+    goalPostcode = findPostcode(goal,country)
     if goalPostcode:
         endLoc = geocoder.osm(f'{goalPostcode}, {country}')
     else:
@@ -67,7 +67,7 @@ def returnAttrIfNotNone(obj,attr):
         obj = "Not Found"
     return obj
 
-def findPostcode(string):
+def findPostcode(string,country):
     if country == "UK":
         postcodes = re.findall(r"[A-Z]{1,2}[0-9][A-Z0-9]? ?[0-9][A-Z]{2}$",string) #https://en.wikipedia.org/wiki/Postcodes_in_the_United_Kingdom    
     elif country == "DE":
@@ -82,14 +82,14 @@ def findPostcode(string):
             return None
 
 
-def makeTempDf(jobListing,baseUrl):
+def makeTempDf(jobListing,baseUrl,keywords,place,place_postcode,country,doSummary,jobIdx):
 
     url = jobListing.get("href")
     if any(jobStr in url for jobStr in ["pagead","rc/clk","/company/"]):
         jobUrl=f"{baseUrl}{url}"
     else:
         jobUrl = None
-        print("No URL found for ",i)
+        print("No URL found for ",jobIdx)
 
     jobCard = jobListing.find(
     "div",{"class":"slider_container"}
@@ -164,7 +164,7 @@ def makeTempDf(jobListing,baseUrl):
         else:
             return pd.DataFrame()
 
-        distance, duration = getDistanceAndTime(place, place_postcode, oneLocation)
+        distance, duration = getDistanceAndTime(place, place_postcode, oneLocation,country)
         shortSummary = makeSummaryCustom(description,int(len(description)/10),60) if doSummary else None
         return pd.DataFrame(
             {
@@ -185,10 +185,10 @@ def makeTempDf(jobListing,baseUrl):
                 "url":jobUrl,
                 "Full_Description": description,
                 "Original_Job_Link":originalJobLink,
-                },index=[i])
+                },index=[jobIdx])
     
     else:
-        print("No job title for ",i)
+        print("No job title for ",jobIdx)
         return pd.DataFrame()
 
 def makeSummary(text,max_length=100,min_length=20):
@@ -216,203 +216,208 @@ def makeSummaryCustom(text,max_length=100,min_length=20):
         print(e)
         return None
      
-
-
-driverOpts = wd.FirefoxOptions()
-driverOpts.add_argument("--incognito")
-#driverOpts.add_argument("--headless")
-
-
-place="Poole"
-place_postcode = "BH14 0BN "
-country = ["UK","DE"][0]
-job = "Machine Learning".replace(" ","+")
-radius = 100 # in miles
-keywords = ["python", "pandas","pytorch","scikit","keras","sql","tensorflow","photonics","FDTD"]
-
-
-dbTableName = 'indeed_jobs'
-saveToSQL = False
-continueFileIfAvailable = False
-doDynamic = False
-doSummary = True # English only atm
-
-if country != "UK":
-    doSummary = False
-
-excelName = f"jobsDf_{place}_{job}.xlsx"
-
-if country == "UK":
-    baseUrl = "https://uk.indeed.com"
-elif country == "DE":
-    baseUrl = "https://de.indeed.com"
-
-url =f"{baseUrl}/jobs?q={job}&l={place}&radius={radius}"
-print(f"Doing URL {url}")
-
-upperCaseLetters = ascii_uppercase
-
-if doSummary:
-    from transformers import pipeline
-    from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-
-
-def dfColToLetter(df,col):
+     
+def dfColToLetter(df,col,upperCaseLetters):
     cols = list(df.columns)
     num = cols.index(col)
     return upperCaseLetters[num]
 
-if not doDynamic:
-    with urlopen(url) as page:
-        pageHtml = page.read()
+def main():
 
-    pageSoupLxml = bs(pageHtml, "lxml")
-    jobCardsPart = pageSoupLxml.find("div",{"id":"mosaic-zone-jobcards"})
+    driverOpts = wd.FirefoxOptions()
+    driverOpts.add_argument("--incognito")
+    #driverOpts.add_argument("--headless")
 
-    jobUrls = []
-    otherUrls = []
-    if jobCardsPart is not None:
-        for a in jobCardsPart.find_all("a"):
-            url_jobCard = a.get("href")
-            if "pagead" in url_jobCard or "rc/clk" in url_jobCard:
-                jobUrls.append(url_jobCard)
-            else:
-                otherUrls.append(url_jobCard)
 
-        jobCards = jobCardsPart.find_all(
-            hasClassAndName
-        )
+    place="Poole"
+    place_postcode = "BH14 0BN "
+    country = ["UK","DE"][0]
+    job = "Machine Learning".replace(" ","+")
+    radius = 25 # in miles
+    keywords = ["python", "pandas","pytorch","scikit","keras","sql","tensorflow","photonics","FDTD"]
 
-        navButtons = pageSoupLxml.find_all("ul",{"class":"pagination-list"})
-        if navButtons:
-            buttons = navButtons[0].find_all("li")
-            navUrls=[]
-            for idx in range(1,len(buttons)):
-                navUrls.append(f"{url}&start={10*idx}")
-        
-            for navUrl in navUrls:
-                with urlopen(navUrl) as page:
-                    navUrlHtml = page.read()
-                navUrlSoup = bs(navUrlHtml,"lxml")
-                navJobCardPart = navUrlSoup.find("div",{"id":"mosaic-zone-jobcards"})
-                if "Captcha" in navUrlSoup.text:
-                    webbrowser.open_new_tab(navUrl)
-                    continue
+
+    dbTableName = 'indeed_jobs'
+    saveToSQL = False
+    continueFileIfAvailable = False
+    doDynamic = False
+    doSummary = False # English only atm
+
+    if country != "UK":
+        doSummary = False
+
+    excelName = f"jobsDf_{place}_{job}.xlsx"
+
+    if country == "UK":
+        baseUrl = "https://uk.indeed.com"
+    elif country == "DE":
+        baseUrl = "https://de.indeed.com"
+
+    url =f"{baseUrl}/jobs?q={job}&l={place}&radius={radius}"
+    print(f"Doing URL {url}")
+
+    
+
+    if doSummary:
+        from transformers import pipeline
+        from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+
+
+
+    if not doDynamic:
+        with urlopen(url) as page:
+            pageHtml = page.read()
+
+        pageSoupLxml = bs(pageHtml, "lxml")
+        jobCardsPart = pageSoupLxml.find("div",{"id":"mosaic-zone-jobcards"})
+
+        jobUrls = []
+        otherUrls = []
+        if jobCardsPart is not None:
+            for a in jobCardsPart.find_all("a"):
+                url_jobCard = a.get("href")
+                if "pagead" in url_jobCard or "rc/clk" in url_jobCard:
+                    jobUrls.append(url_jobCard)
                 else:
-                    navJobCards = navJobCardPart.find_all(hasClassAndName)
-                    jobCards += navJobCards
+                    otherUrls.append(url_jobCard)
+
+            jobCards = jobCardsPart.find_all(
+                hasClassAndName
+            )
+
+            navButtons = pageSoupLxml.find_all("ul",{"class":"pagination-list"})
+            if navButtons:
+                buttons = navButtons[0].find_all("li")
+                navUrls=[]
+                for idx in range(1,len(buttons)):
+                    navUrls.append(f"{url}&start={10*idx}")
             
+                for navUrl in navUrls:
+                    with urlopen(navUrl) as page:
+                        navUrlHtml = page.read()
+                    navUrlSoup = bs(navUrlHtml,"lxml")
+                    navJobCardPart = navUrlSoup.find("div",{"id":"mosaic-zone-jobcards"})
+                    if "Captcha" in navUrlSoup.text:
+                        webbrowser.open_new_tab(navUrl)
+                        continue
+                    else:
+                        navJobCards = navJobCardPart.find_all(hasClassAndName)
+                        jobCards += navJobCards
+                
 
-        if continueFileIfAvailable and os.path.isfile(excelName):
-            jobsDf = pd.read_excel(excelName)
-        else:    
-            jobsDf = pd.DataFrame()
+            if continueFileIfAvailable and os.path.isfile(excelName):
+                jobsDf = pd.read_excel(excelName)
+            else:    
+                jobsDf = pd.DataFrame()
 
-        for i,jobListing in enumerate(jobCards):
-            try:
-                jobsDf = jobsDf.append(makeTempDf(jobListing,baseUrl))
-            except Exception as e:
-                print(e,"makeTempDf Failed, trying again in 60s")
-                time.sleep(60)
+            for jobIdx,jobListing in enumerate(jobCards):
                 try:
-                    jobsDf = jobsDf.append(makeTempDf(jobListing,baseUrl))
+                    jobsDf = jobsDf.append(makeTempDf(jobListing,baseUrl,keywords,place,place_postcode,country,doSummary,jobIdx))
                 except Exception as e:
-                    print(e,"makeTempDf Failed again")
+                    print(e,"makeTempDf Failed, trying again in 60s")
+                    time.sleep(60)
+                    try:
+                        jobsDf = jobsDf.append(makeTempDf(jobListing,baseUrl,keywords,place,place_postcode,country,doSummary,jobIdx))
+                    except Exception as e:
+                        print(e,"makeTempDf Failed again")
 
-        jobsDf.drop_duplicates(["url"],inplace=True)
-        if "Unnamed: 0" in jobsDf.columns:
-            jobsDf.drop("Unnamed: 0",axis=1,inplace=True)
+            jobsDf.drop_duplicates(["url"],inplace=True)
+            if "Unnamed: 0" in jobsDf.columns:
+                jobsDf.drop("Unnamed: 0",axis=1,inplace=True)
 
-        totalRows,totalCols = jobsDf.shape
-        wr = pd.ExcelWriter(f"Formatted_{excelName}",engine="xlsxwriter")
-        jobsDf.to_excel(wr,sheet_name="Jobs",index=False)
-        wb = wr.book
-        ws = wr.sheets["Jobs"]
-        ws.set_column(0,len(jobsDf.columns)+1,20)
-        format1 = wb.add_format({"num_format":'£#,##0'})
-        format2 = wb.add_format({"num_format":'#,##0"km"'})
-        wrapFormat = wb.add_format({"text_wrap":True})
-        ws.set_column("D:F",10,format1)
-        ws.set_column("H:H",10,format2)
-        ws.set_column("L:M",20,wrapFormat)
-        ws.set_column("A:B",20,wrapFormat)
-        ws.set_column("P:P",50,wrapFormat)
-        for rowIdx in range(2,jobsDf.shape[0]):
-            ws.set_row(rowIdx,20)
-        
-        ws2 = wb.add_worksheet("Charts")
-        chart = wb.add_chart({"type":"bar"})
-        chart.set_size({"width":720,"height":540})#in pixels
-        plotCols = ['Minimum_Salary','Maximum_Salary']
-        for plotCol in plotCols:
-            chart.add_series({
-                "values": f"=Jobs!${dfColToLetter(jobsDf,plotCol)}$2:${dfColToLetter(jobsDf,plotCol)}${totalRows+1}",
-                'categories': f"=Jobs!${dfColToLetter(jobsDf,'Job_Title')}$2:${dfColToLetter(jobsDf,'Job_Title')}${totalRows+1}",
-                "name":f"=Jobs!${dfColToLetter(jobsDf,plotCol)}$1"})
-        chart.set_title({"name":"Salary"})
-        ws2.insert_chart("A1",chart)
-        wr.save()
-        markdown = jobsDf.drop(["Full_Description","url","Original_Job_Link"],axis=1).to_markdown(index=False)
-        with open("jobsDf.md","w") as f:
-            for l in markdown.split("\n"):
-                try:
-                    f.write(f"{l}\n")
-                except Exception as e:
-                    print(e,"\n","Problem with ",l)
-        print(jobsDf)
-
+            totalRows,totalCols = jobsDf.shape
+            wr = pd.ExcelWriter(f"Formatted_{excelName}",engine="xlsxwriter")
+            jobsDf.to_excel(wr,sheet_name="Jobs",index=False)
+            wb = wr.book
+            ws = wr.sheets["Jobs"]
+            ws.set_column(0,len(jobsDf.columns)+1,20)
+            format1 = wb.add_format({"num_format":'£#,##0'})
+            format2 = wb.add_format({"num_format":'#,##0"km"'})
+            wrapFormat = wb.add_format({"text_wrap":True})
+            ws.set_column("D:F",10,format1)
+            ws.set_column("H:H",10,format2)
+            ws.set_column("L:M",20,wrapFormat)
+            ws.set_column("A:B",20,wrapFormat)
+            ws.set_column("P:P",50,wrapFormat)
+            for rowIdx in range(2,jobsDf.shape[0]):
+                ws.set_row(rowIdx,20)
             
-        if saveToSQL:
-            
-            from sqlalchemy import create_engine
-            with open("sqlpass.txt","r") as f:
-                lines = f.readlines()
-                loginName = lines[0].strip()
-                loginPass = lines[1]
-            engine = create_engine(f'postgresql://{loginName}:{loginPass}@localhost:5432/webscdb')
-            if not engine.has_table(dbTableName):
-                jobsDf.to_sql(dbTableName,engine)
-            else:
-                if continueFileIfAvailable:
-                    sqlDf = pd.read_sql(dbTableName,engine)
-                    sqlDf = sqlDf.append(jobsDf)
-                    if "level_0" in sqlDf.columns:
-                        sqlDf.drop(["level_0","index"],axis=1,inplace=True)
-                    sqlDf.reset_index(inplace=True,drop=True)
-                    sqlDf.drop_duplicates(["url"],inplace=True)
+            ws2 = wb.add_worksheet("Charts")
+            chart = wb.add_chart({"type":"bar"})
+            chart.set_size({"width":720,"height":540})#in pixels
+            plotCols = ['Minimum_Salary','Maximum_Salary']
+            for plotCol in plotCols:
+                chart.add_series({
+                    "values": f"=Jobs!${dfColToLetter(jobsDf,plotCol,ascii_uppercase)}$2:${dfColToLetter(jobsDf,plotCol,ascii_uppercase)}${totalRows+1}",
+                    'categories': f"=Jobs!${dfColToLetter(jobsDf,'Job_Title',ascii_uppercase)}$2:${dfColToLetter(jobsDf,'Job_Title',ascii_uppercase)}${totalRows+1}",
+                    "name":f"=Jobs!${dfColToLetter(jobsDf,plotCol,ascii_uppercase)}$1"})
+            chart.set_title({"name":"Salary"})
+            ws2.insert_chart("A1",chart)
+            wr.save()
+            markdown = jobsDf.drop(["Full_Description","url","Original_Job_Link"],axis=1).to_markdown(index=False)
+            with open("jobsDf.md","w") as f:
+                for l in markdown.split("\n"):
+                    try:
+                        f.write(f"{l}\n")
+                    except Exception as e:
+                        print(e,"\n","Problem with ",l)
+            print(jobsDf)
+
+                
+            if saveToSQL:
+                
+                from sqlalchemy import create_engine
+                with open("sqlpass.txt","r") as f:
+                    lines = f.readlines()
+                    loginName = lines[0].strip()
+                    loginPass = lines[1]
+                engine = create_engine(f'postgresql://{loginName}:{loginPass}@localhost:5432/webscdb')
+                if not engine.has_table(dbTableName):
+                    jobsDf.to_sql(dbTableName,engine)
                 else:
-                    sqlDf = jobsDf
-                sqlDf.to_sql(dbTableName,engine,if_exists="replace")
-    else:
-        if "Captcha" in pageSoupLxml.text:
-            print("Captcha blocked scraping, try opening the website in the browser")
-            webbrowser.open(url)
+                    if continueFileIfAvailable:
+                        sqlDf = pd.read_sql(dbTableName,engine)
+                        sqlDf = sqlDf.append(jobsDf)
+                        if "level_0" in sqlDf.columns:
+                            sqlDf.drop(["level_0","index"],axis=1,inplace=True)
+                        sqlDf.reset_index(inplace=True,drop=True)
+                        sqlDf.drop_duplicates(["url"],inplace=True)
+                    else:
+                        sqlDf = jobsDf
+                    sqlDf.to_sql(dbTableName,engine,if_exists="replace")
         else:
-            print("No job ads found")
-        
+            if "Captcha" in pageSoupLxml.text:
+                print("Captcha blocked scraping, try opening the website in the browser")
+                webbrowser.open(url)
+            else:
+                print("No job ads found")
+            
 
-else:
-    drv = wd.Firefox(".",options=driverOpts)
-    drv.get(url)
-    #drv.find_element_by_xpath("slider_item")
-    jobContainers = drv.find_elements_by_class_name("slider_container")
+    else:
+        drv = wd.Firefox(".",options=driverOpts)
+        drv.get(url)
+        #drv.find_element_by_xpath("slider_item")
+        jobContainers = drv.find_elements_by_class_name("slider_container")
 
-    jobsDf_sel = pd.DataFrame()
-    for i,jobby in enumerate(jobContainers):
-        drv.execute_script("arguments[0].scrollIntoView();", jobby)
-        drv.execute_script("arguments[0].click();", jobby)
-        #jobby.click()
-        #print(dir(jobby))
-        pageHtml_sel = drv.page_source
-        time.sleep(2)
-        pageSoupLxml_sel = bs(pageHtml_sel, "lxml")
-        cont = pageSoupLxml_sel.find_all("div",{"id":"vjs-container"})[0]
-        head = cont.find_all("div",{"id":"vjs-jobtitle"})[0].text
-        jobsDf_sel = jobsDf_sel.append(
-                pd.DataFrame(
-                    {
-                        "Job Title":head,
-                        },index=[i]))
-    jobsDf_sel.to_excel("jobsDf.xlsx")
-    print(jobsDf_sel)
-    drv.close()
+        jobsDf_sel = pd.DataFrame()
+        for i,jobby in enumerate(jobContainers):
+            drv.execute_script("arguments[0].scrollIntoView();", jobby)
+            drv.execute_script("arguments[0].click();", jobby)
+            #jobby.click()
+            #print(dir(jobby))
+            pageHtml_sel = drv.page_source
+            time.sleep(2)
+            pageSoupLxml_sel = bs(pageHtml_sel, "lxml")
+            cont = pageSoupLxml_sel.find_all("div",{"id":"vjs-container"})[0]
+            head = cont.find_all("div",{"id":"vjs-jobtitle"})[0].text
+            jobsDf_sel = jobsDf_sel.append(
+                    pd.DataFrame(
+                        {
+                            "Job Title":head,
+                            },index=[i]))
+        jobsDf_sel.to_excel("jobsDf.xlsx")
+        print(jobsDf_sel)
+        drv.close()
+
+if __name__ == "__main__":
+    main()
